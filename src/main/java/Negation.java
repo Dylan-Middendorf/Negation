@@ -1,39 +1,90 @@
+/*
+ * The MIT License
+ * Copyright © 2021 Dylan Middendorf
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
 import java.io.EOFException;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.Reader;
-import java.util.Objects;
+import java.io.StringReader;
 import java.util.TreeMap;
 
 public class Negation {
-
+    // File signature of "!"
     public static final int[] FILE_SIGNATURE = { '!', '-' };
-    public static final int EOF = -1;
-    public static final int NL = '\n';
-    public static final int CR = 13;
-    public static final int SP = ' ';
-    public static final int BOOLEAN = '!';
-    public static final int NUMBER = '$';
-    public static final int STRING = '_';
-    public static final int STDOUT = '#';
-    public static final int ASSIGNMENT_OPERATOR = '?';
+    // End of file
+    public static final int EOF = -0x1;
+    // Whitespace
+    public static final int TAB = 0x9;
+    public static final int LF = 0xA;
+    public static final int CR = 0xD;
+    public static final int SPACE = 0x20;
+    // Variable type declaration
+    public static final int BOOLEAN = 0x21;
+    public static final int NUMBER = 0x24;
+    public static final int STRING = 0x5F;
+    // Standard out
+    public static final int STDOUT = 0x23;
+    // Assignment operator
+    public static final int ASSIGNMENT_OPERATOR = 0x3F;
     // Response codes
     public static final int SUCCESS = 0;
 
-    private Reader in;
+    // The input "!" program
+    private final Reader in;
+    // Counts the number of LF's and CR's found in the file. Used for debugging.
     private int lineNumber = 0;
 
+    // Used for name-value pairs
     private final TreeMap<String, Boolean> booleanVariables = new TreeMap<>();
-    private final TreeMap<String, Integer> numberVariables = new TreeMap<>();
+    private final TreeMap<String, Number> numberVariables = new TreeMap<>();
     private final TreeMap<String, String> stringVariables = new TreeMap<>();
 
+    public Negation(File in) throws FileNotFoundException {
+        NegationUtils.requireNonNull(in);
+        this.in = new FileReader(in);
+    }
+
+    public Negation(InputStream in) {
+        NegationUtils.requireNonNull(in);
+        this.in = new InputStreamReader(in);
+    }
+
     public Negation(Reader in) {
-        Objects.requireNonNull(in);
+        NegationUtils.requireNonNull(in);
         this.in = in;
     }
 
+    public Negation(String in) {
+        NegationUtils.requireNonNull(in);
+        this.in = new StringReader(in);
+    }
+
     public void runNegation() throws IOException {
-        if (checkFileSignature() != SUCCESS)
-            return;
+        NegationUtils.checkFileSignature(in);
 
         for (int response; (response = readLine()) != 200; ++lineNumber) {
             switch (response) {
@@ -64,24 +115,13 @@ public class Negation {
                 break;
             case STRING:
                 String message = readName();
-                if (message.equals("/n"))
+                if (message.equals("/n")) {
                     System.out.println();
-                else if (stringVariables.containsKey(message))
-                    System.out.print(stringVariables.get(readName()));
-                else
+                } else if (stringVariables.containsKey(message)) {
+                    System.out.print(stringVariables.get(message));
+                } else
                     System.out.print(message);
                 break;
-            // default:
-            // StringBuilder message = new StringBuilder((char) temp);
-            // while (temp != -1)
-            // switch (temp = in.read()) {
-            // case NL:
-            // temp = -1;
-            // System.out.println(message);
-            // break;
-            // default:
-            // message.append((char) temp);
-            // }
             }
             break;
         case '-':
@@ -99,7 +139,7 @@ public class Negation {
             switch (n = in.read()) {
             case EOF:
                 throw new EOFException("Unexpected EOF while parsing variable name at " + lineNumber);
-            case NL:
+            case LF:
             case CR:
             case ASSIGNMENT_OPERATOR:
                 return name.toString();
@@ -112,22 +152,20 @@ public class Negation {
         String name = readName();
         name = name.substring(0, name.length() - 1);
         boolean value = true;
-        boolean isInitialized = false;
-        for (int index = 0;; ++index) // index might be used in future releases
-            switch (in.read()) {
+        in.read();
+        for (int c; (c = in.read()) != CR && c != LF;) {
+            switch (c) {
             case EOF:
-                throw new EOFException("Unexpected EOF while parsing boolean");
-            case CR:
-            case NL:
-                booleanVariables.put(name, value);
-                return value;
+                throw new EOFException();
             case BOOLEAN:
-                if (isInitialized && value)
-                    throw new FileFormatException(
-                            "The boolean formmating does not follow the file format at line " + lineNumber);
-                isInitialized = true;
                 value = !value;
+                break;
+            default:
+                throw new FileFormatException();
             }
+        }
+        booleanVariables.put(name, value);
+        return value;
     }
 
     private int readNumber() throws IOException {
@@ -138,11 +176,11 @@ public class Negation {
             case EOF:
                 throw new EOFException("Unexpected EOF while parsing number");
             case CR:
-            case NL:
+            case LF:
                 int result = Integer.parseInt(value.toString());
                 numberVariables.put(name, result);
                 return result;
-            case SP:
+            case SPACE:
                 break;
             default:
                 if (n < 48 || (57 < n && n < 97) || 123 < n)
@@ -154,29 +192,38 @@ public class Negation {
 
     private String readString() throws IOException {
         String name = readName();
+        name = name.substring(0, name.length() - 1);
+        in.read();
         StringBuilder value = new StringBuilder();
         for (int index = 0, n;; ++index) // index might be used in future releases
             switch (n = in.read()) {
             case EOF:
                 throw new EOFException("Unexpected EOF while parsing string");
             case CR:
-            case NL:
+            case LF:
                 String result = value.toString();
                 stringVariables.put(name, result);
                 return result;
-            case SP:
-                break;
             default:
                 value.append((char) n);
             }
     }
 
-    public int checkFileSignature() throws IOException {
-        for (int expectedChar : FILE_SIGNATURE) {
-            if (expectedChar != this.in.read())
-                return 1;
+    final private static class NegationUtils {
+        public static <T> T requireNonNull(T obj) {
+            if (obj == null) {
+                throw new NullPointerException("in == null");
+            }
+            return obj;
         }
-        return 0;
+
+        public static void checkFileSignature(Reader in) throws IOException {
+            for (int expectedChar : FILE_SIGNATURE) {
+                if (expectedChar != in.read()) {
+                    throw new FileFormatException();
+                }
+            }
+        }
     }
 
     final static class FileFormatException extends IOException {
@@ -194,4 +241,5 @@ public class Negation {
             super("Illegal syntax at line " + lineNumber);
         }
     }
+
 }
