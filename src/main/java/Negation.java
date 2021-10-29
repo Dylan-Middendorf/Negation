@@ -255,20 +255,4 @@ public class Negation {
         }
     }
 
-    final static class FileFormatException extends IOException {
-        private static final long serialVersionUID = 1L;
-
-        public FileFormatException() {
-            super();
-        }
-
-        public FileFormatException(String s) {
-            super(s);
-        }
-
-        public FileFormatException(int lineNumber) {
-            super("Illegal syntax at line " + lineNumber);
-        }
-    }
-
 }
