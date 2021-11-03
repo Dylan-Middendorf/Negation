@@ -30,6 +30,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.io.StringReader;
+import java.util.LinkedList;
 import java.util.TreeMap;
 
 public class Negation {
@@ -38,7 +39,6 @@ public class Negation {
     // End of file
     public static final int EOF = -0x1;
     // Whitespace
-    public static final int TAB = 0x9;
     public static final int LF = 0xA;
     public static final int CR = 0xD;
     public static final int SPACE = 0x20;
@@ -60,6 +60,7 @@ public class Negation {
     private final Reader in;
     // Counts the number of LF's and CR's found in the file. Used for debugging.
     private int lineNumber = 0;
+    private int currentChar = 0;
 
     private boolean throwOnEOF = false;
 
@@ -99,7 +100,6 @@ public class Negation {
     }
 
     public int readLine() throws IOException {
-        int temp;
         switch (this.in.read()) {
         case BOOLEAN:
             readBoolean();
@@ -108,22 +108,30 @@ public class Negation {
             readNumber();
             break;
         case STRING:
-            readString();
+            LinkedList<String> chainedAssignments = new LinkedList<>();
+            // Fill the list
+            do {
+                chainedAssignments.add(readString());
+            } while (currentChar == ASSIGNMENT_OPERATOR);
+            // Empty the list
+            while (chainedAssignments.size() > 1)
+                stringVariables.put(chainedAssignments.pollFirst(), chainedAssignments.getLast());
             break;
         case STDOUT:
-            switch (temp = in.read()) {
+            switch (in.read()) {
             case BOOLEAN:
-                System.out.print(booleanVariables.get(readName()) ? 1 : 0);
+                System.out.print(booleanVariables.get(readString()) ? 1 : 0);
                 break;
             case NUMBER:
-                System.out.print(numberVariables.get(readName()));
+                System.out.print(numberVariables.get(readString()));
                 break;
             case STRING:
-                String message = readName();
-                if (stringVariables.containsKey(message)) {
-                    System.out.print(stringVariables.get(message));
-                } else
-                    System.out.print(message);
+                String message = readString();
+                if (stringVariables.containsKey(message))
+                    message = stringVariables.get(message);
+
+                message = message.replace("/n", "\n");
+                System.out.print(message);
                 break;
             }
             break;
@@ -136,8 +144,12 @@ public class Negation {
         return 0;
     }
 
-    private String readName() throws IOException {
-        StringBuilder name = new StringBuilder();
+    private String readString() throws IOException {
+        StringBuilder str;
+        if (currentChar == ASSIGNMENT_OPERATOR)
+            str = new StringBuilder(Character.toString(nextNonWhitespace()));
+        else
+            str = new StringBuilder();
         int char0 = 0;
         int char1 = 0;
         while (true)
@@ -146,37 +158,37 @@ public class Negation {
             case LF:
             case CR:
             case ASSIGNMENT_OPERATOR:
-                return name.toString();
-            case TAB:
+                this.currentChar = char0;
+                return str.toString();
             case SPACE:
                 StringBuilder whitespace = new StringBuilder(Character.toString(char0));
-                while ((char1 = in.read()) == TAB || char1 == SPACE)
+                while ((char1 = in.read()) == SPACE)
                     whitespace.append((char) char1);
                 switch (char1) {
                 case EOF:
                 case CR:
                 case LF:
-                    name.append(whitespace.toString());
+                    str.append(whitespace);
                 case ASSIGNMENT_OPERATOR:
-                    NegationUtils.delete(whitespace);
-                    return name.toString();
+                    this.currentChar = char1;
+                    return str.toString();
                 default:
-                    name.append(whitespace.toString() + (char) char1);
-                    NegationUtils.delete(whitespace);
+                    str.append(whitespace.toString() + (char) char1);
                 }
                 break;
             default:
-                name.append((char) char0);
+                str.append((char) char0);
             }
 
     }
 
     private boolean readBoolean() throws IOException {
-        String name = readName();
+        String name = readString();
         boolean value = true;
         in.read();
         for (int c; (c = in.read()) != CR && c != LF;) {
             switch (c) {
+
             case EOF:
                 throw new EOFException();
             case BOOLEAN:
@@ -191,7 +203,7 @@ public class Negation {
     }
 
     private int readNumber() throws IOException {
-        String name = readName();
+        String name = readString();
         StringBuilder value = new StringBuilder();
         for (int index = 0, n;; ++index) // index might be used in future releases
             switch (n = in.read()) {
@@ -212,26 +224,20 @@ public class Negation {
             }
     }
 
-    private String readString() throws IOException {
-        String name = readName();
-        in.read();
-        StringBuilder value = new StringBuilder();
-        for (int index = 0, n;; ++index) // index might be used in future releases
-            switch (n = in.read()) {
-            case EOF:
-                throw new EOFException("Unexpected EOF while parsing string");
-            case CR:
-            case LF:
-                String result = value.toString().replace("\\n", "\n");
-
-                stringVariables.put(name, result);
-                return result;
-            case SLASH:
-                value.append((char) REVERSE_SOLIDUS);
+    private int nextNonWhitespace() throws IOException {
+        int char0;
+        while (true) {
+            char0 = in.read();
+            if (char0 == EOF)
                 break;
-            default:
-                value.append((char) n);
-            }
+            if (char0 == SPACE)
+                continue;
+            return char0;
+        }
+        if (throwOnEOF)
+            throw new EOFException("End of input");
+        else
+            return -1;
     }
 
     final private static class NegationUtils {
@@ -248,10 +254,6 @@ public class Negation {
                     throw new FileFormatException();
                 }
             }
-        }
-
-        public static void delete(Object obj) {
-            obj = null;
         }
     }
 
