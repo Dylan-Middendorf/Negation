@@ -1,3 +1,3 @@
 # Negation
 
-https://esolangs.org/wiki/!(https://esolangs.org/wiki/!)
+Interpreter for Not.(https://esolangs.org/wiki/!)
